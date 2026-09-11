@@ -147,18 +147,6 @@ export default function CreateAudiobookPage() {
     }
   }
 
-  async function uploadAudio(bucket: string, file: File, path: string): Promise<string | null> {
-    const { error } = await supabase.storage.from(bucket).upload(path, file, {
-      upsert: true,
-      contentType: file.type || 'audio/mpeg',
-    });
-    if (error) {
-      console.error('Upload error:', error);
-      return null;
-    }
-    return path;
-  }
-
   async function uploadCover(file: File): Promise<string | null> {
     const path = `covers/${Date.now()}-${file.name}`;
     const { error } = await supabase.storage.from('book-covers').upload(path, file, {
@@ -172,7 +160,8 @@ export default function CreateAudiobookPage() {
 
   async function handleSubmit(e: React.FormEvent, status: 'draft' | 'published') {
     e.preventDefault();
-    console.log('Create Audiobook form submitted. Status:', status);
+    const isEdit = Boolean(editId);
+    const chapterLabel = (index: number) => `Chapter ${index + 1}`;
 
     if (!title.trim()) {
       toast.error('Title is required');
@@ -182,153 +171,131 @@ export default function CreateAudiobookPage() {
       toast.error('MRP is required');
       return;
     }
+    if (!openingFile && !isEdit) {
+      toast.error('Opening Credits mandatory');
+      return;
+    }
+    if (!endingFile && !isEdit) {
+      toast.error('Ending Credits mandatory');
+      return;
+    }
+    for (let index = 0; index < chapters.length; index++) {
+      const chapter = chapters[index];
+      if (!chapter.title.trim()) {
+        toast.error(`${chapterLabel(index)} title required`);
+        return;
+      }
+      if (!chapter.file && !chapter.existingPath) {
+        toast.error(`${chapterLabel(index)} MP3 required`);
+        return;
+      }
+    }
 
     setSaving(true);
 
     try {
+      const uploadAndGetUrl = async (file: File, folder: string): Promise<string> => {
+        const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+        const path = `${folder}/${Date.now()}-${safeFileName}`;
+        const { error: uploadError } = await supabase.storage
+          .from('audiobook-files')
+          .upload(path, file, { contentType: file.type || 'audio/mpeg' });
+        if (uploadError) {
+          throw new Error(`Upload failed ${file.name}: ${uploadError.message}`);
+        }
+
+        const { data } = supabase.storage.from('audiobook-files').getPublicUrl(path);
+        if (!data.publicUrl) {
+          throw new Error(`getPublicUrl failed for ${path}`);
+        }
+        return data.publicUrl;
+      };
+
+      const toPublicUrl = (value: string | null): string | null => {
+        if (!value) return null;
+        if (value.startsWith('http://') || value.startsWith('https://')) return value;
+        const { data } = supabase.storage.from('audiobook-files').getPublicUrl(value);
+        return data.publicUrl || null;
+      };
+
       let uploadedCoverUrl = coverUrl;
       if (coverFile) {
         uploadedCoverUrl = await uploadCover(coverFile);
-        if (!uploadedCoverUrl) {
-          toast.error('Failed to upload cover');
-          setSaving(false);
-          return;
-        }
+        if (!uploadedCoverUrl) throw new Error('Failed to upload cover');
       }
 
-      let uploadedOpeningUrl: string | null = existingOpening;
-      if (openingFile) {
-        uploadedOpeningUrl = await uploadAudio('audiobook-files', openingFile, `opening/${Date.now()}-${openingFile.name}`);
-        if (!uploadedOpeningUrl) {
-          toast.error('Failed to upload Opening Credits');
-          setSaving(false);
-          return;
-        }
-      }
+      const openingPublicUrl = openingFile
+        ? await uploadAndGetUrl(openingFile, 'opening')
+        : toPublicUrl(existingOpening);
+      const endingPublicUrl = endingFile
+        ? await uploadAndGetUrl(endingFile, 'ending')
+        : toPublicUrl(existingEnding);
+      const samplePublicUrl = sampleAudioFile
+        ? await uploadAndGetUrl(sampleAudioFile, 'sample')
+        : toPublicUrl(existingSample);
 
-      let uploadedEndingUrl: string | null = existingEnding;
-      if (endingFile) {
-        uploadedEndingUrl = await uploadAudio('audiobook-files', endingFile, `ending/${Date.now()}-${endingFile.name}`);
-        if (!uploadedEndingUrl) {
-          toast.error('Failed to upload Ending Credits');
-          setSaving(false);
-          return;
-        }
-      }
-
-      let uploadedSampleUrl: string | null = existingSample;
-      if (sampleAudioFile) {
-        uploadedSampleUrl = await uploadAudio('audiobook-files', sampleAudioFile, `sample/${Date.now()}-${sampleAudioFile.name}`);
+      const chapterFolder = `chapters/${editId || 'new'}`;
+      const chapterUploads: { title: string; mp3_url: string; chapter_no: number }[] = [];
+      for (let index = 0; index < chapters.length; index++) {
+        const chapter = chapters[index];
+        const mp3Url = chapter.file
+          ? await uploadAndGetUrl(chapter.file, chapterFolder)
+          : toPublicUrl(chapter.existingPath);
+        if (!mp3Url) throw new Error(`${chapterLabel(index)} MP3 URL is missing`);
+        chapterUploads.push({
+          title: chapter.title.trim(),
+          mp3_url: mp3Url,
+          chapter_no: index + 1,
+        });
       }
 
       const audiobookData = {
         title: title.trim(),
         authors,
         cover_url: uploadedCoverUrl,
-        mrp: parseInt(mrp) || 0,
+        mrp: parseInt(mrp, 10) || 0,
         description: description.trim() || null,
-        opening_url: uploadedOpeningUrl,
-        ending_url: uploadedEndingUrl,
-        sample_audio_url: uploadedSampleUrl,
+        opening_url: openingPublicUrl,
+        ending_url: endingPublicUrl,
+        sample_audio_url: samplePublicUrl,
         status,
         sku: `AB-${Date.now().toString().slice(-6)}`,
       };
 
-      let result;
-      if (editId) {
-        result = await supabase.from('audiobooks').update(audiobookData).eq('id', editId).select().maybeSingle();
-      } else {
-        result = await supabase.from('audiobooks').insert(audiobookData).select().maybeSingle();
-      }
+      const result = editId
+        ? await supabase.from('audiobooks').update(audiobookData).eq('id', editId).select().single()
+        : await supabase.from('audiobooks').insert(audiobookData).select().single();
+      if (result.error) throw new Error(`Audiobook save failed: ${result.error.message}`);
+      if (!result.data?.id) throw new Error('Audiobook save returned no ID');
 
-      if (result.error) {
-        toast.error(`Failed to save: ${result.error.message}`);
-        setSaving(false);
-        return;
-      }
-
-      const audiobookId = result.data?.id;
-      if (!audiobookId) {
-        toast.error('Failed to get audiobook ID');
-        setSaving(false);
-        return;
-      }
-
-      // Upload replacement chapter files before removing existing edit rows.
-      const chapterInserts: { audiobook_id: string; chapter_no: number; title: string; mp3_url: string | null; duration: number }[] = [];
-      for (let idx = 0; idx < chapters.length; idx++) {
-        const c = chapters[idx];
-        const chapterTitle = c.title.trim();
-        if (!chapterTitle && !c.file && !c.existingPath) continue;
-        if (!chapterTitle) {
-          toast.error(`Chapter ${idx + 1} title is required`);
-          setSaving(false);
-          return;
-        }
-        if (!c.file && !c.existingPath) {
-          toast.error(`Choose an MP3 for Chapter ${idx + 1}`);
-          setSaving(false);
-          return;
-        }
-
-        let finalPath: string | null = c.existingPath;
-        if (c.file) {
-          const uploadPath = `chapters/${audiobookId}/${Date.now()}-${idx}-${c.file.name.replace(/\s/g, '-')}`;
-          const { error: chUploadError } = await supabase.storage
-            .from('audiobook-files')
-            .upload(uploadPath, c.file, {
-              upsert: true,
-              contentType: c.file.type || 'audio/mpeg',
-            });
-          if (chUploadError) {
-            console.error('Chapter upload error:', chUploadError);
-            toast.error(`Failed to upload chapter ${idx + 1}: ${chUploadError.message}`);
-            setSaving(false);
-            return;
-          }
-          finalPath = uploadPath;
-        }
-
-        chapterInserts.push({
-          audiobook_id: audiobookId,
-          chapter_no: idx + 1,
-          title: chapterTitle,
-          mp3_url: finalPath,
-          duration: 0,
-        });
-      }
-
-      if (editId) {
+      const audiobookId = result.data.id;
+      if (isEdit) {
         const { error: deleteError } = await supabase
           .from('audio_chapters')
           .delete()
-          .eq('audiobook_id', editId);
-        if (deleteError) {
-          toast.error(`Failed to replace chapters: ${deleteError.message}`);
-          setSaving(false);
-          return;
-        }
+          .eq('audiobook_id', audiobookId);
+        if (deleteError) throw new Error(`Existing chapters delete failed: ${deleteError.message}`);
       }
 
-      if (chapterInserts.length > 0) {
-        const { error: chInsertError } = await supabase.from('audio_chapters').insert(chapterInserts);
-        if (chInsertError) {
-          console.error('Chapter insert error:', chInsertError);
-          toast.error(`Failed to save chapters: ${chInsertError.message}`);
-          setSaving(false);
-          return;
-        }
-      }
+      const inserts = chapterUploads.map((chapter) => ({
+        audiobook_id: audiobookId,
+        chapter_no: chapter.chapter_no,
+        title: chapter.title,
+        mp3_url: chapter.mp3_url,
+        duration: 0,
+      }));
+      const { error: chapterError } = await supabase.from('audio_chapters').insert(inserts);
+      if (chapterError) throw new Error(`Chapters insert failed: ${chapterError.message}`);
 
-      toast.success(status === 'published' ? 'Audiobook Published!' : 'Draft saved');
+      toast.success(`${status === 'published' ? 'Audiobook Published' : 'Draft saved'} with ${inserts.length} chapters`);
       router.push('/admin/mybooks');
       router.refresh();
-    } catch (err) {
-      console.error('Exception:', err);
-      toast.error('An error occurred');
+    } catch (error) {
+      console.error('Audiobook save error:', error);
+      toast.error(error instanceof Error ? error.message : 'An error occurred while saving the audiobook');
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   }
 
   return (
