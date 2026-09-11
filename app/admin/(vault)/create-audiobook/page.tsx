@@ -254,16 +254,22 @@ export default function CreateAudiobookPage() {
         return;
       }
 
-      // For edit mode, delete existing chapters first
-      if (editId) {
-        await supabase.from('audio_chapters').delete().eq('audiobook_id', editId);
-      }
-
-      // Upload chapter files and build insert rows
+      // Upload replacement chapter files before removing existing edit rows.
       const chapterInserts: { audiobook_id: string; chapter_no: number; title: string; mp3_url: string | null; duration: number }[] = [];
       for (let idx = 0; idx < chapters.length; idx++) {
         const c = chapters[idx];
-        if (!c.title.trim()) continue;
+        const chapterTitle = c.title.trim();
+        if (!chapterTitle && !c.file && !c.existingPath) continue;
+        if (!chapterTitle) {
+          toast.error(`Chapter ${idx + 1} title is required`);
+          setSaving(false);
+          return;
+        }
+        if (!c.file && !c.existingPath) {
+          toast.error(`Choose an MP3 for Chapter ${idx + 1}`);
+          setSaving(false);
+          return;
+        }
 
         let finalPath: string | null = c.existingPath;
         if (c.file) {
@@ -277,18 +283,31 @@ export default function CreateAudiobookPage() {
           if (chUploadError) {
             console.error('Chapter upload error:', chUploadError);
             toast.error(`Failed to upload chapter ${idx + 1}: ${chUploadError.message}`);
-          } else {
-            finalPath = uploadPath;
+            setSaving(false);
+            return;
           }
+          finalPath = uploadPath;
         }
 
         chapterInserts.push({
           audiobook_id: audiobookId,
           chapter_no: idx + 1,
-          title: c.title.trim(),
+          title: chapterTitle,
           mp3_url: finalPath,
           duration: 0,
         });
+      }
+
+      if (editId) {
+        const { error: deleteError } = await supabase
+          .from('audio_chapters')
+          .delete()
+          .eq('audiobook_id', editId);
+        if (deleteError) {
+          toast.error(`Failed to replace chapters: ${deleteError.message}`);
+          setSaving(false);
+          return;
+        }
       }
 
       if (chapterInserts.length > 0) {
@@ -296,8 +315,8 @@ export default function CreateAudiobookPage() {
         if (chInsertError) {
           console.error('Chapter insert error:', chInsertError);
           toast.error(`Failed to save chapters: ${chInsertError.message}`);
-        } else {
-          console.log(`Saved ${chapterInserts.length} chapters to audio_chapters`);
+          setSaving(false);
+          return;
         }
       }
 
