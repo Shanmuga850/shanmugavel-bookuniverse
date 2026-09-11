@@ -72,7 +72,12 @@ export default function CreateAudiobookPage() {
   }, [editId]);
 
   async function loadBook(id: string) {
-    const { data } = await supabase.from('audiobooks').select('*').eq('id', id).maybeSingle();
+    const { data, error } = await supabase.from('audiobooks').select('*').eq('id', id).maybeSingle();
+    if (error || !data) {
+      toast.error(error?.message || 'Audiobook not found');
+      router.push('/admin/mybooks');
+      return;
+    }
     if (data) {
       setTitle(data.title || '');
       setAuthors(data.authors || ['Shanmugavel M']);
@@ -192,6 +197,7 @@ export default function CreateAudiobookPage() {
     }
 
     setSaving(true);
+    const uploadedStoragePaths: string[] = [];
 
     try {
       const uploadAndGetUrl = async (file: File, folder: string): Promise<string> => {
@@ -203,6 +209,7 @@ export default function CreateAudiobookPage() {
         if (uploadError) {
           throw new Error(`Upload failed ${file.name}: ${uploadError.message}`);
         }
+        uploadedStoragePaths.push(path);
 
         const { data } = supabase.storage.from('audiobook-files').getPublicUrl(path);
         if (!data.publicUrl) {
@@ -262,36 +269,62 @@ export default function CreateAudiobookPage() {
         sku: `AB-${Date.now().toString().slice(-6)}`,
       };
 
-      const result = editId
-        ? await supabase.from('audiobooks').update(audiobookData).eq('id', editId).select().single()
-        : await supabase.from('audiobooks').insert(audiobookData).select().single();
-      if (result.error) throw new Error(`Audiobook save failed: ${result.error.message}`);
-      if (!result.data?.id) throw new Error('Audiobook save returned no ID');
+      let newBook: { id: string } | null = null;
+      let bookErr: { message: string } | null = null;
+      if (editId) {
+        const result = await supabase
+          .from('audiobooks')
+          .update(audiobookData)
+          .eq('id', editId)
+          .select('id')
+          .single();
+        newBook = result.data;
+        bookErr = result.error;
+      } else {
+        const result = await supabase
+          .from('audiobooks')
+          .insert(audiobookData)
+          .select('id')
+          .single();
+        newBook = result.data;
+        bookErr = result.error;
+      }
+      if (bookErr) throw new Error(`Audiobook save failed: ${bookErr.message}`);
+      if (!newBook?.id) throw new Error('Audiobook save returned no ID');
 
-      const audiobookId = result.data.id;
+      const realAudiobookId = newBook.id;
+      console.log('REAL BOOK ID:', realAudiobookId);
       if (isEdit) {
         const { error: deleteError } = await supabase
           .from('audio_chapters')
           .delete()
-          .eq('audiobook_id', audiobookId);
+          .eq('audiobook_id', realAudiobookId);
         if (deleteError) throw new Error(`Existing chapters delete failed: ${deleteError.message}`);
       }
 
       const inserts = chapterUploads.map((chapter) => ({
-        audiobook_id: audiobookId,
+        audiobook_id: realAudiobookId,
         chapter_no: chapter.chapter_no,
         title: chapter.title,
         mp3_url: chapter.mp3_url,
         duration: 0,
       }));
       const { error: chapterError } = await supabase.from('audio_chapters').insert(inserts);
-      if (chapterError) throw new Error(`Chapters insert failed: ${chapterError.message}`);
+      if (chapterError) {
+        console.error(chapterError);
+        alert(chapterError.message);
+        throw new Error(`Chapters insert failed: ${chapterError.message}`);
+      }
 
       toast.success(`${status === 'published' ? 'Audiobook Published' : 'Draft saved'} with ${inserts.length} chapters`);
       router.push('/admin/mybooks');
       router.refresh();
     } catch (error) {
       console.error('Audiobook save error:', error);
+      const orphanCleanup = await supabase.storage.from('audiobook-files').remove(uploadedStoragePaths);
+      if (orphanCleanup.error) {
+        console.error('Orphaned audio cleanup failed:', orphanCleanup.error);
+      }
       toast.error(error instanceof Error ? error.message : 'An error occurred while saving the audiobook');
     } finally {
       setSaving(false);
