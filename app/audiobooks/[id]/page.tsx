@@ -216,25 +216,81 @@ export default function AudiobookDetailPage() {
     }
     setBuying(true);
     try {
-      const { error } = await supabase
-        .from('purchases')
-        .insert({ user_id: userId, audiobook_id: book.id, ebook_id: null });
-      if (error) {
-        if (error.code === '23505') {
-          toast.info('You already own this audiobook');
-          setPurchased(true);
-        } else {
-          toast.error(`Purchase failed: ${error.message}`);
-        }
-      } else {
-        toast.success('Purchase successful! Added to your library.');
-        setPurchased(true);
-        setTimeout(() => router.push('/library'), 1000);
+      const orderResponse = await fetch('/api/razorpay/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: Math.round(book.mrp * 100) }),
+      });
+      const order = await orderResponse.json();
+
+      if (!orderResponse.ok || !order.order_id) {
+        toast.error(`Failed to create order: ${order.error || 'Unknown error'}`);
+        setBuying(false);
+        return;
       }
-    } catch {
-      toast.error('An error occurred during purchase');
+
+      if (!(window as any).Razorpay) {
+        toast.error('Payment checkout is unavailable. Please try again.');
+        setBuying(false);
+        return;
+      }
+
+      const razorpay = new (window as any).Razorpay({
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: order.amount,
+        currency: order.currency,
+        name: "Shanmugavel's Bookstore",
+        description: book.title,
+        order_id: order.order_id,
+        handler: async (response: any) => {
+          const verifyResponse = await fetch('/api/razorpay/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(response),
+          });
+          const verification = await verifyResponse.json();
+
+          if (!verifyResponse.ok || !verification.success) {
+            toast.error('Payment verification failed.');
+            setBuying(false);
+            return;
+          }
+
+          const { error } = await supabase
+            .from('purchases')
+            .insert({ user_id: userId, audiobook_id: book.id, ebook_id: null, amount: book.mrp });
+          if (error) {
+            if (error.code === '23505') {
+              toast.info('You already own this audiobook');
+              setPurchased(true);
+            } else {
+              toast.error(`Payment succeeded but library save failed: ${error.message}`);
+            }
+          } else {
+            toast.success('Payment successful! Added to your library.');
+            setPurchased(true);
+            setTimeout(() => router.push('/library'), 1000);
+          }
+          setBuying(false);
+        },
+        modal: {
+          ondismiss: () => {
+            toast.info('Payment cancelled');
+            setBuying(false);
+          },
+        },
+        theme: { color: '#D4AF37' },
+      });
+
+      razorpay.on('payment.failed', () => {
+        toast.error('Payment failed. Please try again.');
+        setBuying(false);
+      });
+      razorpay.open();
+    } catch (error: any) {
+      toast.error(`Purchase failed: ${error.message || 'Unknown error'}`);
+      setBuying(false);
     }
-    setBuying(false);
   }
 
   function formatTime(s: number) {

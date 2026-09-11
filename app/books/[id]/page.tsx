@@ -137,24 +137,29 @@ export default function BookDetailPage() {
     const res = await fetch("/api/razorpay/order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: 1 }),
+      body: JSON.stringify({ amount: Math.round(book.mrp * 100) }),
     });
     const order = await res.json();
     
-    if (!order.id) {
+    if (!res.ok || !order.order_id) {
       toast.error("Failed to create order: " + (order.error || "Unknown"));
       setBuying(false);
       return;
     }
 
-    // 2. Open Razorpay Popup
+    if (!(window as any).Razorpay) {
+      toast.error("Payment checkout is unavailable. Please try again.");
+      setBuying(false);
+      return;
+    }
+
     const options = {
       key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
       amount: order.amount,
       currency: "INR",
       name: "Shanmugavel's Bookstore",
       description: book.title,
-      order_id: order.id,
+      order_id: order.order_id,
       handler: async function (response: any) {
         // 3. Verify payment
         const verifyRes = await fetch("/api/razorpay/verify", {
@@ -169,7 +174,7 @@ export default function BookDetailPage() {
           const { error } = await supabase.from("purchases").insert({
             ebook_id: book.id,
             user_id: userId,
-            amount: 1
+            amount: book.mrp
           });
           
           if (error) {
@@ -186,6 +191,7 @@ export default function BookDetailPage() {
       },
       modal: {
         ondismiss: function() {
+          toast.info("Payment cancelled");
           setBuying(false);
         }
       },
@@ -193,6 +199,10 @@ export default function BookDetailPage() {
     };
 
     const rzp = new (window as any).Razorpay(options);
+    rzp.on("payment.failed", function () {
+      toast.error("Payment failed. Please try again.");
+      setBuying(false);
+    });
     rzp.open();
   } catch (e: any) {
     toast.error("Buy failed: " + e.message);
