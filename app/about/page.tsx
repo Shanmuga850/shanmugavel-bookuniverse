@@ -76,7 +76,7 @@ export default function AboutPage() {
                   className="w-24 h-24 rounded-full gold-border mx-auto object-cover"
                 />
               ) : (
-                <CoinLogo size={96} spinning className="mx-auto" />
+                <CoinLogo size={64} spinning className="mx-auto" />
               )}
 
               <div>

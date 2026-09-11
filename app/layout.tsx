@@ -10,6 +10,7 @@ const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfa
 export const metadata: Metadata = {
   title: "Shanmugavel's Bookstore | For 5% Thinkers — Shanmugavel M",
   description: 'Author Direct D2C platform by Shanmugavel M. eBooks and Audiobooks for the 5% who think differently.',
+  icons: { icon: "/logo.png", apple: "/logo.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
