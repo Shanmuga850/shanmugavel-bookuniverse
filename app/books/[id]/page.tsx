@@ -124,38 +124,81 @@ export default function BookDetailPage() {
     load();
   }, [id, ownedParam]);
 
-  async function handleBuy() {
-    if (!book) return;
-    if (!authed || !userId) {
-      toast.info('Please login to purchase');
-      router.push(`/auth?next=/books/${book.id}`);
+  const handleBuy = async () => {
+  if (!authed) {
+    router.push(`/auth?next=/books/${id}`);
+    return;
+  }
+  if (!book || !userId) return;
+  
+  setBuying(true);
+  try {
+    // 1. Create order - ₹1 testing
+    const res = await fetch("/api/razorpay/order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: 1 }),
+    });
+    const order = await res.json();
+    
+    if (!order.id) {
+      toast.error("Failed to create order: " + (order.error || "Unknown"));
+      setBuying(false);
       return;
     }
 
-    setBuying(true);
-    try {
-      const { error } = await supabase
-        .from('purchases')
-        .insert({ user_id: userId, ebook_id: book.id, audiobook_id: null });
-
-      if (error) {
-        if (error.code === '23505') {
-          toast.info('You already own this book');
-          setOwned(true);
+    // 2. Open Razorpay Popup
+    const options = {
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+      amount: order.amount,
+      currency: "INR",
+      name: "Shanmugavel's Bookstore",
+      description: book.title,
+      order_id: order.id,
+      handler: async function (response: any) {
+        // 3. Verify payment
+        const verifyRes = await fetch("/api/razorpay/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(response),
+        });
+        const verifyData = await verifyRes.json();
+        
+        if (verifyData.success) {
+          // 4. ONLY NOW insert into purchases
+          const { error } = await supabase.from("purchases").insert({
+            ebook_id: book.id,
+            user_id: userId,
+            amount: 1
+          });
+          
+          if (error) {
+            toast.error("Payment done but library save failed: " + error.message);
+          } else {
+            toast.success("Payment Success! Book added to library!");
+            setOwned(true);
+            router.push("/library");
+          }
         } else {
-          toast.error(`Purchase failed: ${error.message}`);
+          toast.error("Payment verification failed!");
         }
-      } else {
-        toast.success('Purchase successful! Added to your library.');
-        setOwned(true);
-        setTimeout(() => router.push('/library'), 1000);
-      }
-    } catch (err) {
-      toast.error('An error occurred during purchase');
-    }
+        setBuying(false);
+      },
+      modal: {
+        ondismiss: function() {
+          setBuying(false);
+        }
+      },
+      theme: { color: "#D4AF37" }
+    };
+
+    const rzp = new (window as any).Razorpay(options);
+    rzp.open();
+  } catch (e: any) {
+    toast.error("Buy failed: " + e.message);
     setBuying(false);
   }
-
+};
   function handleReadSample() {
     setShowSample(true);
   }
