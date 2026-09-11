@@ -9,6 +9,8 @@ interface CoinLogoProps {
 }
 
 export function CoinLogo({ size = 40, className, spinning = false }: CoinLogoProps) {
+  const hasWidthClass = /\bw-\d/.test(className || '');
+
   return (
     <img
       src="/logo.png"
@@ -18,7 +20,7 @@ export function CoinLogo({ size = 40, className, spinning = false }: CoinLogoPro
         spinning && 'animate-[coin-spin_4s_linear_infinite]',
         className,
       )}
-      style={{ width: size, height: size }}
+      style={hasWidthClass ? undefined : { width: size, height: size }}
     />
   );
 }

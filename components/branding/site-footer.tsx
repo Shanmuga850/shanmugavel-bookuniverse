@@ -9,7 +9,7 @@ export function SiteFooter() {
     <footer className="bg-black border-t border-[hsl(43_30%_25%)] mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="flex flex-col items-center gap-6 text-center">
-          <CoinLogo size={48} className="mx-auto" />
+          <CoinLogo size={56} className="w-14 h-14 mx-auto" />
           <div>
             <h3 className="font-serif text-xl gold-text font-bold">SHANMUGAVEL'S BOOKSTORE</h3>
             <p className="text-xs text-muted-foreground tracking-widest uppercase mt-1">

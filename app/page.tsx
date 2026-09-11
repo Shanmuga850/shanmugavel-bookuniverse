@@ -84,7 +84,10 @@ export default function Home() {
 
         <div className="max-w-7xl mx-auto relative z-10">
           <div className="flex flex-col items-center text-center gap-8 animate-fade-in-up">
-            <CoinLogo size={80} spinning />
+            <CoinLogo
+              className="w-20 h-20 md:w-24 md:h-24 rounded-full object-contain drop-shadow-[0_0_15px_rgba(212,175,55,0.5)]"
+              spinning
+            />
             <div className="space-y-4">
               <h1 className="font-serif text-5xl md:text-7xl font-bold gold-text">
                 {founderTagline}
