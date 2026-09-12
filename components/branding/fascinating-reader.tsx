@@ -41,7 +41,14 @@ export function FascinatingReader({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
 
-  const finalPdfUrl = useMemo(() => normalizeCloudinaryPdf(pdfUrl), [pdfUrl]);
+    const finalPdfUrl = useMemo(() => {
+    const normalized = normalizeCloudinaryPdf(pdfUrl);
+    if (!normalized) return null;
+    if (normalized.includes('res.cloudinary.com')) {
+      return `/api/pdf-proxy?url=${encodeURIComponent(normalized)}`;
+    }
+    return normalized;
+  }, [pdfUrl]);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
