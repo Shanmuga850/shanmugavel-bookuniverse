@@ -2,17 +2,20 @@
 
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
-import { ShoppingBag, Menu, X, Library, LogIn, LogOut } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ShoppingBag, Menu, X, Library, LogIn, LogOut, Search } from 'lucide-react';
 import { CoinLogo } from '@/components/branding/coin-logo';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase-client';
 
 export function SiteHeader() {
+  const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cartCount, setCartCount] = useState(0);
   const [authed, setAuthed] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -55,6 +58,13 @@ export function SiteHeader() {
     };
   }, []);
 
+  const handleSearch = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!searchQuery.trim()) return;
+    router.push(`/?q=${encodeURIComponent(searchQuery.trim())}#ebooks`);
+    setMobileOpen(false);
+  };
+
   const navLinks = [
     { href: '/', label: 'Home' },
     { href: '/#ebooks', label: 'eBooks' },
@@ -67,7 +77,7 @@ export function SiteHeader() {
       className={cn(
         'fixed top-0 left-0 right-0 z-50 transition-all duration-300',
         scrolled
-          ? 'bg-black/90 backdrop-blur-md border-b border-[hsl(43_30%_25%)]'
+         ? 'bg-black/90 backdrop-blur-md border-b border-[hsl(43_30%_25%)]'
           : 'bg-transparent'
       )}
     >
@@ -88,7 +98,7 @@ export function SiteHeader() {
             </div>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-8">
+          <nav className="hidden md:flex items-center gap-6">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
@@ -98,6 +108,17 @@ export function SiteHeader() {
                 {link.label}
               </Link>
             ))}
+            {/* DESKTOP SEARCH */}
+            <form onSubmit={handleSearch} className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search books..."
+                className="w-48 lg:w-64 bg-white/5 border border-[hsl(43_30%_25%)] rounded-full pl-10 pr-4 py-2 text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(43_65%_52%)] focus:bg-white/10 transition-all"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </form>
           </nav>
 
           <div className="flex items-center gap-4">
@@ -112,7 +133,7 @@ export function SiteHeader() {
                 </span>
               )}
             </Link>
-            {authed ? (
+            {authed? (
               <>
                 <Link
                   href="/library"
@@ -142,7 +163,7 @@ export function SiteHeader() {
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="Toggle menu"
             >
-              {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              {mobileOpen? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </button>
           </div>
         </div>
@@ -151,6 +172,17 @@ export function SiteHeader() {
       {mobileOpen && (
         <div className="md:hidden bg-black/95 border-t border-[hsl(43_30%_25%)]">
           <nav className="flex flex-col px-6 py-4 gap-4">
+            {/* MOBILE SEARCH */}
+            <form onSubmit={handleSearch} className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search books..."
+                className="w-full bg-white/5 border border-[hsl(43_30%_25%)] rounded-full pl-10 pr-4 py-3 text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(43_65%_52%)]"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </form>
             {navLinks.map((link) => (
               <Link
                 key={link.href}
@@ -161,7 +193,7 @@ export function SiteHeader() {
                 {link.label}
               </Link>
             ))}
-            {authed ? (
+            {authed? (
               <>
                 <Link
                   href="/library"
