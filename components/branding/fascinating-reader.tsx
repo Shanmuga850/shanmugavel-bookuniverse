@@ -41,10 +41,11 @@ export function FascinatingReader({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
 
-    const finalPdfUrl = useMemo(() => {
+     const finalPdfUrl = useMemo(() => {
     const normalized = normalizeCloudinaryPdf(pdfUrl);
     if (!normalized) return null;
-    if (normalized.includes('res.cloudinary.com')) {
+    // ✅ BOTH: Supabase old PDFs + Cloudinary new 25GB PDFs via proxy
+    if (normalized.startsWith('http')) {
       return `/api/pdf-proxy?url=${encodeURIComponent(normalized)}`;
     }
     return normalized;
