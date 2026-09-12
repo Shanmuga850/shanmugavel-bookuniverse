@@ -24,6 +24,25 @@ import { supabase } from '@/lib/supabase-client';
 import { VELS, CATEGORIES, LANGUAGES } from '@/lib/constants';
 import { toast } from 'sonner';
 
+// NEW - Cloudinary upload helper
+async function uploadToCloudinary(file: File, folder: string): Promise<string | null> {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('folder', folder);
+
+  const res = await fetch('/api/upload', {
+    method: 'POST',
+    body: fd,
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    console.error('Cloudinary upload failed:', data);
+    throw new Error(data.error || 'Upload failed');
+  }
+  return data.url as string;
+}
+
 export default function CreateEbookPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -86,13 +105,13 @@ export default function CreateEbookPage() {
   }
 
   function removeAuthor(idx: number) {
-    setAuthors(authors.filter((_, i) => i !== idx));
+    setAuthors(authors.filter((_, i) => i!== idx));
   }
 
   function toggleLanguage(lang: string) {
     if (selectedLanguages.includes(lang)) {
       if (selectedLanguages.length > 1) {
-        setSelectedLanguages(selectedLanguages.filter((l) => l !== lang));
+        setSelectedLanguages(selectedLanguages.filter((l) => l!== lang));
       }
     } else {
       if (selectedLanguages.length < 2) {
@@ -103,7 +122,7 @@ export default function CreateEbookPage() {
 
   function toggleCategory(cat: string) {
     if (selectedCategories.includes(cat)) {
-      setSelectedCategories(selectedCategories.filter((c) => c !== cat));
+      setSelectedCategories(selectedCategories.filter((c) => c!== cat));
     } else {
       if (selectedCategories.length < 2) {
         setSelectedCategories([...selectedCategories, cat]);
@@ -135,19 +154,7 @@ export default function CreateEbookPage() {
     }
   }
 
-  async function uploadFile(bucket: string, file: File, path: string): Promise<string | null> {
-    const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
-      upsert: true,
-      contentType: file.type,
-    });
-    if (error) {
-      console.error('Upload error:', error);
-      return null;
-    }
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
-    return urlData.publicUrl;
-  }
-
+  // REMOVED old supabase upload, now using Cloudinary 25GB
   async function handleSubmit(e: React.FormEvent, status: 'draft' | 'published') {
     e.preventDefault();
     console.log('Create eBook form submitted. Status:', status);
@@ -167,26 +174,30 @@ export default function CreateEbookPage() {
     let uploadedPdfUrl = pdfUrl;
 
     try {
-      // Upload cover if new file selected
+      // Upload cover to CLOUDINARY - vels-books/covers
       if (coverFile) {
-        const coverPath = `covers/${Date.now()}-${coverFile.name}`;
-        uploadedCoverUrl = await uploadFile('book-covers', coverFile, coverPath);
+        toast.loading('Uploading cover to Cloudinary 25GB...');
+        uploadedCoverUrl = await uploadToCloudinary(coverFile, 'vels-books/covers');
+        toast.dismiss();
         if (!uploadedCoverUrl) {
           toast.error('Failed to upload cover image');
           setSaving(false);
           return;
         }
+        toast.success('Cover uploaded to Cloudinary!');
       }
 
-      // Upload PDF if new file selected
+      // Upload PDF to CLOUDINARY - vels-books/pdfs
       if (pdfFile) {
-        const pdfPath = `pdfs/${Date.now()}-${pdfFile.name}`;
-        uploadedPdfUrl = await uploadFile('book-pdfs', pdfFile, pdfPath);
+        toast.loading('Uploading PDF to Cloudinary 25GB...');
+        uploadedPdfUrl = await uploadToCloudinary(pdfFile, 'vels-books/pdfs');
+        toast.dismiss();
         if (!uploadedPdfUrl) {
           toast.error('Failed to upload PDF');
           setSaving(false);
           return;
         }
+        toast.success('PDF uploaded to Cloudinary!');
       }
 
       const bookData = {
@@ -223,7 +234,7 @@ export default function CreateEbookPage() {
         toast.error(`Failed to save: ${result.error.message}`);
       } else {
         console.log('Saved successfully:', result.data);
-        toast.success(status === 'published' ? 'eBook Published successfully!' : 'Draft saved');
+        toast.success(status === 'published'? 'eBook Published successfully!' : 'Draft saved');
         router.push('/admin/mybooks');
         router.refresh();
       }
@@ -241,9 +252,9 @@ export default function CreateEbookPage() {
         <CoinLogo size={36} />
         <div>
           <h1 className="font-serif text-2xl gold-text font-bold">
-            {editId ? 'Edit eBook' : 'Create eBook'}
+            {editId? 'Edit eBook' : 'Create eBook'}
           </h1>
-          <p className="text-xs text-muted-foreground">GUNSTORY style • Cover = First Page</p>
+          <p className="text-xs text-muted-foreground">GUNSTORY style • Cover = First Page • Now using Cloudinary 25GB</p>
         </div>
       </div>
 
@@ -330,7 +341,7 @@ export default function CreateEbookPage() {
                 onClick={() => setVisibility('public')}
                 className={`px-4 py-2 rounded-lg text-sm transition-all ${
                   visibility === 'public'
-                    ? 'bg-[hsl(43_65%_52%)]/10 text-[hsl(43_65%_52%)] border border-[hsl(43_65%_52%)]/30'
+                   ? 'bg-[hsl(43_65%_52%)]/10 text-[hsl(43_65%_52%)] border border-[hsl(43_65%_52%)]/30'
                     : 'text-muted-foreground border border-transparent hover:bg-[hsl(0_0%_12%)]'
                 }`}
               >
@@ -341,7 +352,7 @@ export default function CreateEbookPage() {
                 onClick={() => setVisibility('private')}
                 className={`px-4 py-2 rounded-lg text-sm transition-all ${
                   visibility === 'private'
-                    ? 'bg-[hsl(43_65%_52%)]/10 text-[hsl(43_65%_52%)] border border-[hsl(43_65%_52%)]/30'
+                   ? 'bg-[hsl(43_65%_52%)]/10 text-[hsl(43_65%_52%)] border border-[hsl(43_65%_52%)]/30'
                     : 'text-muted-foreground border border-transparent hover:bg-[hsl(0_0%_12%)]'
                 }`}
               >
@@ -355,20 +366,20 @@ export default function CreateEbookPage() {
         <div className="black-gold-card p-6 space-y-4">
           <h2 className="font-serif text-lg font-bold flex items-center gap-2">
             <Upload className="h-4 w-4 text-[hsl(43_65%_52%)]" />
-            Upload Files
+            Upload Files (Cloudinary 25GB)
           </h2>
 
           {/* PDF */}
           <div className="space-y-2">
             <Label className="text-[hsl(43_65%_52%)]">PDF / Document REQUIRED *</Label>
             <p className="text-xs text-muted-foreground">
-              Accepts PDF, DOC, DOCX, RTF, TXT, ODT, MOBI → converts to PDF
+              Accepts PDF, DOC, DOCX, RTF, TXT, ODT, MOBI → stored in Cloudinary
             </p>
             <div className="flex items-center gap-3">
               <label className="cursor-pointer">
                 <div className="flex items-center gap-2 px-4 py-2 border border-dashed border-[hsl(43_30%_25%)] rounded-lg hover:border-[hsl(43_65%_52%)] transition-all text-sm">
                   <FileText className="h-4 w-4 text-[hsl(43_65%_52%)]" />
-                  {pdfFile ? pdfFile.name : pdfUrl ? 'PDF uploaded (click to replace)' : 'Choose PDF / Document'}
+                  {pdfFile? pdfFile.name : pdfUrl? 'PDF uploaded (click to replace)' : 'Choose PDF / Document'}
                 </div>
                 <input type="file" accept=".pdf,.doc,.docx,.rtf,.txt,.odt,.mobi,application/pdf" onChange={handlePdfChange} className="hidden" />
               </label>
@@ -382,7 +393,7 @@ export default function CreateEbookPage() {
               <label className="cursor-pointer">
                 <div className="flex items-center gap-2 px-4 py-2 border border-dashed border-[hsl(43_30%_25%)] rounded-lg hover:border-[hsl(43_65%_52%)] transition-all text-sm">
                   <FileText className="h-4 w-4 text-[hsl(43_65%_52%)]" />
-                  {epubFile ? epubFile.name : 'Choose EPUB (optional)'}
+                  {epubFile? epubFile.name : 'Choose EPUB (optional)'}
                 </div>
                 <input type="file" accept=".epub" onChange={(e) => setEpubFile(e.target.files?.[0] || null)} className="hidden" />
               </label>
@@ -393,11 +404,11 @@ export default function CreateEbookPage() {
           <div className="space-y-2">
             <Label className="text-[hsl(43_65%_52%)]">Front Cover JPG MANDATORY *</Label>
             <p className="text-xs text-muted-foreground">
-              First page preview will be merged as first page automatically via pdf-lib
+              Auto optimized to WebP via Cloudinary CDN
             </p>
             <div className="flex gap-4 items-start">
               <div className="w-24 h-32 rounded-md overflow-hidden bg-[hsl(0_0%_10%)] flex items-center justify-center border border-[hsl(43_30%_25%)]">
-                {coverPreview || coverUrl ? (
+                {coverPreview || coverUrl? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={coverPreview || coverUrl || ''} alt="Cover preview" className="w-full h-full object-cover" />
                 ) : (
@@ -407,7 +418,7 @@ export default function CreateEbookPage() {
               <label className="cursor-pointer">
                 <div className="flex items-center gap-2 px-4 py-2 border border-dashed border-[hsl(43_30%_25%)] rounded-lg hover:border-[hsl(43_65%_52%)] transition-all text-sm">
                   <ImageIcon className="h-4 w-4 text-[hsl(43_65%_52%)]" />
-                  {coverFile ? coverFile.name : 'Choose Cover JPG'}
+                  {coverFile? coverFile.name : 'Choose Cover JPG'}
                 </div>
                 <input type="file" accept=".jpg,.jpeg,image/jpeg" onChange={handleCoverChange} className="hidden" />
               </label>
@@ -482,7 +493,7 @@ export default function CreateEbookPage() {
                   onClick={() => toggleLanguage(lang)}
                   className={`px-3 py-1.5 rounded-lg text-xs transition-all ${
                     selectedLanguages.includes(lang)
-                      ? 'bg-[hsl(43_65%_52%)]/10 text-[hsl(43_65%_52%)] border border-[hsl(43_65%_52%)]/30'
+                     ? 'bg-[hsl(43_65%_52%)]/10 text-[hsl(43_65%_52%)] border border-[hsl(43_65%_52%)]/30'
                       : 'text-muted-foreground border border-transparent hover:bg-[hsl(0_0%_12%)]'
                   }`}
                 >
@@ -503,7 +514,7 @@ export default function CreateEbookPage() {
                   onClick={() => toggleCategory(cat)}
                   className={`px-3 py-1.5 rounded-lg text-xs transition-all ${
                     selectedCategories.includes(cat)
-                      ? 'bg-[hsl(43_65%_52%)]/10 text-[hsl(43_65%_52%)] border border-[hsl(43_65%_52%)]/30'
+                     ? 'bg-[hsl(43_65%_52%)]/10 text-[hsl(43_65%_52%)] border border-[hsl(43_65%_52%)]/30'
                       : 'text-muted-foreground border border-transparent hover:bg-[hsl(0_0%_12%)]'
                   }`}
                 >
@@ -549,7 +560,7 @@ export default function CreateEbookPage() {
             className="flex-1 border-[hsl(43_30%_25%)] hover:border-[hsl(43_65%_52%)] h-12"
           >
             <Save className="h-4 w-4 mr-2" />
-            {saving ? 'Saving...' : 'Save Draft'}
+            {saving? 'Saving...' : 'Save Draft'}
           </Button>
           <Button
             type="button"
@@ -558,7 +569,7 @@ export default function CreateEbookPage() {
             className="flex-1 gold-gradient text-black font-semibold hover:glow-gold h-12"
           >
             <Send className="h-4 w-4 mr-2" />
-            {saving ? 'Publishing...' : 'Publish'}
+            {saving? 'Publishing...' : 'Publish'}
           </Button>
         </div>
       </form>
