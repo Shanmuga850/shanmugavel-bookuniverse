@@ -18,12 +18,10 @@ export default function FounderVaultPage() {
   const [vaultCode, setVaultCode] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [otp, setOtp] = useState('');
+  const [totp, setTotp] = useState('');
   const [loading, setLoading] = useState(false);
   const [shaking, setShaking] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
-
-  // REMOVED: const VAULT_CODE and const MOCK_OTP = '123456' - NOW SECURE SERVER CHECK
 
   async function handleVaultCode(e: React.FormEvent) {
     e.preventDefault();
@@ -71,37 +69,26 @@ export default function FounderVaultPage() {
         setLoading(false);
         return;
       }
-      // SEND REAL OTP VIA RESEND
-      const otpRes = await fetch('/api/vault/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      if (otpRes.ok) {
-        toast.success('Credentials verified — Real OTP sent to email');
-        setStep(3);
-      } else {
-        toast.error('Failed to send OTP - check Resend config');
-      }
+      toast.success('Credentials verified — Open Authenticator App');
+      setStep(3);
     } catch {
       toast.error('Authentication failed');
     }
     setLoading(false);
   }
 
-  async function handleOtp(e: React.FormEvent) {
+  async function handleTotp(e: React.FormEvent) {
     e.preventDefault();
-    if (otp.trim().length !== 6) {
-      toast.error('Enter 6-digit OTP');
+    if (totp.trim().length !== 6) {
+      toast.error('Enter 6-digit code from Authenticator');
       return;
     }
     setLoading(true);
     try {
-      // VERIFY REAL OTP FROM DB - NO MORE 123456
-      const res = await fetch('/api/vault/verify-otp', {
+      const res = await fetch('/api/vault/verify-totp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp: otp.trim(), vaultCode }),
+        body: JSON.stringify({ totp: totp.trim(), vaultCode, email }),
       });
       if (res.ok) {
         sessionStorage.setItem('founderVault', 'true');
@@ -111,7 +98,7 @@ export default function FounderVaultPage() {
       } else {
         const data = await res.json();
         setShaking(true);
-        toast.error(data.error || 'Invalid OTP');
+        toast.error(data.error || 'Invalid authenticator code');
         setTimeout(() => setShaking(false), 500);
       }
     } catch {
@@ -154,16 +141,7 @@ export default function FounderVaultPage() {
                 <Label htmlFor="vault-code">Vault Code</Label>
                 <div className="relative">
                   <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="vault-code"
-                    type="password"
-                    value={vaultCode}
-                    onChange={(e) => setVaultCode(e.target.value)}
-                    placeholder="Enter vault code"
-                    required
-                    autoFocus
-                    className="pl-9 bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)] text-center tracking-widest"
-                  />
+                  <Input id="vault-code" type="password" value={vaultCode} onChange={(e) => setVaultCode(e.target.value)} placeholder="Enter vault code" required autoFocus className="pl-9 bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)] text-center tracking-widest" />
                 </div>
               </div>
               <Button type="submit" disabled={loading} className="w-full gold-gradient text-black font-semibold hover:glow-gold h-12">
@@ -197,21 +175,21 @@ export default function FounderVaultPage() {
                 </div>
               </div>
               <Button type="submit" disabled={loading} className="w-full gold-gradient text-black font-semibold hover:glow-gold h-12">
-                {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying...</> : <>Verify & Send OTP <ArrowRight className="h-4 w-4 ml-2" /></>}
+                {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying...</> : <>Verify & Open Authenticator <ArrowRight className="h-4 w-4 ml-2" /></>}
               </Button>
             </form>
           )}
 
           {step === 3 && (
-            <form onSubmit={handleOtp} className="space-y-4">
+            <form onSubmit={handleTotp} className="space-y-4">
               <div className="text-center space-y-2">
                 <KeyRound className="h-10 w-10 text-[hsl(43_65%_52%)] mx-auto" />
-                <h2 className="font-serif text-lg gold-text font-bold">Step 3 — OTP Verification</h2>
-                <p className="text-xs text-muted-foreground">Enter the 6-digit code sent to your email</p>
+                <h2 className="font-serif text-lg gold-text font-bold">Step 3 — Authenticator Code</h2>
+                <p className="text-xs text-muted-foreground">Enter 6-digit code from Google Authenticator app</p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="vault-otp">6-Digit OTP</Label>
-                <Input id="vault-otp" type="text" inputMode="numeric" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} placeholder="000000" required autoFocus className="bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)] text-center text-2xl tracking-[0.5em] font-mono" />
+                <Label htmlFor="vault-totp">6-Digit Code</Label>
+                <Input id="vault-totp" type="text" inputMode="numeric" maxLength={6} value={totp} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ''))} placeholder="000000" required autoFocus className="bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)] text-center text-2xl tracking-[0.5em] font-mono" />
               </div>
               <Button type="submit" disabled={loading} className="w-full gold-gradient text-black font-semibold hover:glow-gold h-12">
                 {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying...</> : <>Enter Vault <ArrowRight className="h-4 w-4 ml-2" /></>}
