@@ -20,7 +20,6 @@ interface FascinatingReaderProps {
 function normalizeCloudinaryPdf(url: string | null) {
   if (!url) return null;
   let final = url.trim();
-  // OLD BUG FIX: if uploaded as /image/upload/*.pdf -> must be /raw/upload/*.pdf for PDF.js
   if (final.includes('res.cloudinary.com') && final.includes('/image/upload/') && final.endsWith('.pdf')) {
     final = final.replace('/image/upload/', '/raw/upload/');
   }
@@ -41,12 +40,14 @@ export function FascinatingReader({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
 
-     const finalPdfUrl = useMemo(() => {
+  const finalPdfUrl = useMemo(() => {
     const normalized = normalizeCloudinaryPdf(pdfUrl);
     if (!normalized) return null;
-    // ✅ BOTH: Supabase old PDFs + Cloudinary new 25GB PDFs via proxy
     if (normalized.startsWith('http')) {
-      return `/api/pdf-proxy?url=${encodeURIComponent(normalized)}`;
+      let clean = normalized;
+      try { clean = decodeURIComponent(clean); } catch {}
+      try { clean = decodeURIComponent(clean); } catch {}
+      return `/api/pdf-proxy?url=${encodeURIComponent(clean)}`;
     }
     return normalized;
   }, [pdfUrl]);
@@ -62,21 +63,17 @@ export function FascinatingReader({
     if (!finalPdfUrl) {
       setLoading(false);
       setError(true);
-      console.log('FascinatingReader: pdfUrl is', pdfUrl, 'final:', finalPdfUrl);
       return;
     }
-    console.log('FascinatingReader: loading PDF from', finalPdfUrl, 'original:', pdfUrl);
     setLoading(true);
     setError(false);
     setNumPages(0);
-  }, [finalPdfUrl, pdfUrl]);
+  }, [finalPdfUrl]);
 
   useEffect(() => {
     if (containerRef.current) {
       const updateWidth = () => {
-        if (containerRef.current) {
-          setContainerWidth(containerRef.current.offsetWidth - 32);
-        }
+        if (containerRef.current) setContainerWidth(containerRef.current.offsetWidth - 32);
       };
       updateWidth();
       window.addEventListener('resize', updateWidth);
@@ -92,151 +89,55 @@ export function FascinatingReader({
   }
 
   function onDocumentLoadError(err: Error) {
-    console.error('PDF load error:', err, 'URL:', finalPdfUrl);
+    console.error('PDF load error:', err);
     setLoading(false);
     setError(true);
   }
 
-  function handleContextMenu(e: React.MouseEvent) {
-    e.preventDefault();
-  }
-
+  function handleContextMenu(e: React.MouseEvent) { e.preventDefault(); }
   function handleKeyDown(e: React.KeyboardEvent) {
-    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'p' || e.key === 'c')) {
-      e.preventDefault();
-    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'p' || e.key === 'c')) e.preventDefault();
   }
 
   const visiblePages = isFullAccess
    ? Array.from({ length: numPages }, (_, i) => i + 1)
     : Array.from({ length: Math.min(previewEnd - previewStart + 1, numPages) }, (_, i) => previewStart + i);
 
-  function prevPage() {
-    if (currentPage > visiblePages[0]) setCurrentPage(currentPage - 1);
-  }
-
-  function nextPage() {
-    if (currentPage < visiblePages[visiblePages.length - 1]) setCurrentPage(currentPage + 1);
-  }
+  function prevPage() { if (currentPage > visiblePages[0]) setCurrentPage(currentPage - 1); }
+  function nextPage() { if (currentPage < visiblePages[visiblePages.length - 1]) setCurrentPage(currentPage + 1); }
 
   if (error ||!finalPdfUrl) {
     return (
-      <div
-        className="black-gold-border rounded-xl bg-[#0a0a0a] p-12 text-center select-none"
-        onContextMenu={handleContextMenu}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
-      >
+      <div className="black-gold-border rounded-xl bg-[#0a0a0a] p-12 text-center select-none" onContextMenu={handleContextMenu} onKeyDown={handleKeyDown} tabIndex={0}>
         <BookOpen className="h-16 w-16 text-[hsl(43_65%_52%)] mx-auto mb-4" />
         <p className="text-foreground font-serif text-lg mb-2">PDF Not Available</p>
-        <p className="text-sm text-muted-foreground">
-          {finalPdfUrl? 'Failed to load PDF — check Cloudinary raw URL' : 'Bucket fixed — Re-upload PDF in Admin My Books → Edit'}
-        </p>
-        <p className="text-xs text-muted-foreground mt-2 font-mono break-all">
-          {finalPdfUrl || pdfUrl || 'No URL set'}
-        </p>
-        {finalPdfUrl && finalPdfUrl.includes('raw/upload') && (
-          <p className="text-xs text-yellow-500 mt-3">Trying raw URL: {finalPdfUrl}</p>
-        )}
+        <p className="text-sm text-muted-foreground">Bucket fixed — Re-upload PDF in Admin My Books → Edit</p>
+        <p className="text-xs text-muted-foreground mt-2 font-mono break-all">{finalPdfUrl || pdfUrl || 'No URL set'}</p>
       </div>
     );
   }
 
   return (
-    <div
-      className="black-gold-border rounded-xl bg-[#0a0a0a] overflow-hidden select-none"
-      onContextMenu={handleContextMenu}
-      onKeyDown={handleKeyDown}
-      tabIndex={0}
-      style={{ userSelect: 'none' }}
-    >
+    <div className="black-gold-border rounded-xl bg-[#0a0a0a] overflow-hidden select-none" onContextMenu={handleContextMenu} onKeyDown={handleKeyDown} tabIndex={0} style={{ userSelect: 'none' }}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(43_30%_25%)] bg-[hsl(0_0%_5%)]">
-        <div className="flex items-center gap-2">
-          <Shield className="h-4 w-4 text-[hsl(43_65%_52%)]" />
-          <span className="text-xs text-[hsl(43_65%_52%)] font-semibold">
-            {isFullAccess? 'Full Access — READ ONLY' : 'Sample Preview'}
-          </span>
-        </div>
-        <span className="text-xs text-muted-foreground font-serif italic">
-          For 5% THINKERS
-        </span>
-        {numPages > 0 && (
-          <span className="text-xs text-muted-foreground">
-            Page {currentPage} / {isFullAccess? numPages : `${previewStart}-${previewEnd}`}
-          </span>
-        )}
+        <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-[hsl(43_65%_52%)]" /><span className="text-xs text-[hsl(43_65%_52%)] font-semibold">{isFullAccess? 'Full Access — READ ONLY' : 'Sample Preview'}</span></div>
+        <span className="text-xs text-muted-foreground font-serif italic">For 5% THINKERS</span>
+        {numPages > 0 && <span className="text-xs text-muted-foreground">Page {currentPage} / {isFullAccess? numPages : `${previewStart}-${previewEnd}`}</span>}
       </div>
-
       <div ref={containerRef} className="flex flex-col items-center py-6 min-h-[500px]">
-        {loading && (
-          <div className="flex flex-col items-center gap-3 py-20">
-            <Loader2 className="h-8 w-8 text-[hsl(43_65%_52%)] animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading fairy tale...</p>
-          </div>
-        )}
-
-        <Document
-          file={finalPdfUrl}
-          onLoadSuccess={onDocumentLoadSuccess}
-          onLoadError={onDocumentLoadError}
-          loading={null}
-          error={null}
-          className="flex flex-col items-center"
-        >
-          {!loading &&!error && (
-            <>
-              <div className={isMobile? '' : 'shadow-2xl'}>
-                <Page
-                  pageNumber={currentPage}
-                  width={Math.min(containerWidth, isMobile? containerWidth : 700)}
-                  renderTextLayer={false}
-                  renderAnnotationLayer={false}
-                  className="border-2 border-[hsl(43_30%_25%)] rounded-lg overflow-hidden"
-                />
-              </div>
-
-              <div className="flex items-center gap-4 mt-6">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={prevPage}
-                  disabled={currentPage <= visiblePages[0]}
-                  className="text-[hsl(43_65%_52%)] hover:bg-[hsl(43_65%_52%)]/10 disabled:opacity-30"
-                >
-                  <ChevronLeft className="h-6 w-6" />
-                </Button>
-                <div className="flex items-center gap-1.5">
-                  {visiblePages.slice(0, 10).map((pg) => (
-                    <button
-                      key={pg}
-                      onClick={() => setCurrentPage(pg)}
-                      className={`w-2 h-2 rounded-full transition-all ${
-                        currentPage === pg
-                         ? 'bg-[hsl(43_65%_52%)] w-4'
-                          : 'bg-[hsl(0_0%_20%)] hover:bg-[hsl(0_0%_30%)]'
-                      }`}
-                    />
-                  ))}
-                  {visiblePages.length > 10 && <span className="text-xs text-muted-foreground ml-1">...</span>}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={nextPage}
-                  disabled={currentPage >= visiblePages[visiblePages.length - 1]}
-                  className="text-[hsl(43_65%_52%)] hover:bg-[hsl(43_65%_52%)]/10 disabled:opacity-30"
-                >
-                  <ChevronRight className="h-6 w-6" />
-                </Button>
-              </div>
-            </>
-          )}
+        {loading && <div className="flex flex-col items-center gap-3 py-20"><Loader2 className="h-8 w-8 text-[hsl(43_65%_52%)] animate-spin" /><p className="text-sm text-muted-foreground">Loading fairy tale...</p></div>}
+        <Document file={finalPdfUrl} onLoadSuccess={onDocumentLoadSuccess} onLoadError={onDocumentLoadError} loading={null} error={null} className="flex flex-col items-center">
+          {!loading &&!error && <>
+            <div className={isMobile? '' : 'shadow-2xl'}><Page pageNumber={currentPage} width={Math.min(containerWidth, isMobile? containerWidth : 700)} renderTextLayer={false} renderAnnotationLayer={false} className="border-2 border-[hsl(43_30%_25%)] rounded-lg overflow-hidden" /></div>
+            <div className="flex items-center gap-4 mt-6">
+              <Button variant="ghost" size="icon" onClick={prevPage} disabled={currentPage <= visiblePages[0]} className="text-[hsl(43_65%_52%)]"><ChevronLeft className="h-6 w-6" /></Button>
+              <div className="flex items-center gap-1.5">{visiblePages.slice(0, 10).map((pg) => <button key={pg} onClick={() => setCurrentPage(pg)} className={`w-2 h-2 rounded-full ${currentPage === pg? 'bg-[hsl(43_65%_52%)] w-4' : 'bg-[hsl(0_0%_20%)]'}`} />)}{visiblePages.length > 10 && <span className="text-xs text-muted-foreground ml-1">...</span>}</div>
+              <Button variant="ghost" size="icon" onClick={nextPage} disabled={currentPage >= visiblePages[visiblePages.length - 1]} className="text-[hsl(43_65%_52%)]"><ChevronRight className="h-6 w-6" /></Button>
+            </div>
+          </>}
         </Document>
       </div>
-
-      <div className="px-4 py-3 border-t border-[hsl(43_30%_25%)] bg-[hsl(0_0%_5%)]">
-        <FairyQuote size="sm" />
-      </div>
+      <div className="px-4 py-3 border-t border-[hsl(43_30%_25%)] bg-[hsl(0_0%_5%)]"><FairyQuote size="sm" /></div>
     </div>
   );
 }
