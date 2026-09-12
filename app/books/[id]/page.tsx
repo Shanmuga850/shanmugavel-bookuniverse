@@ -86,8 +86,21 @@ export default function BookDetailPage() {
       }
       setBook(bookData);
 
-      // Resolve PDF URL (signed if private bucket, direct if full URL)
-      const resolvedUrl = await getSignedUrl('book-pdfs', bookData.pdf_url);
+      // ✅ FIXED: Cloudinary 25GB - support both Supabase and Cloudinary URLs
+      let resolvedUrl: string | null = null;
+      if (bookData.pdf_url) {
+        if (bookData.pdf_url.startsWith('https://res.cloudinary.com')) {
+          resolvedUrl = bookData.pdf_url;
+        } else if (bookData.pdf_url.startsWith('http')) {
+          resolvedUrl = bookData.pdf_url;
+        } else {
+          try {
+            resolvedUrl = await getSignedUrl('book-pdfs', bookData.pdf_url);
+          } catch {
+            resolvedUrl = bookData.pdf_url;
+          }
+        }
+      }
       setPdfUrl(resolvedUrl || bookData.pdf_url);
 
       const { data: session } = await supabase.auth.getSession();
