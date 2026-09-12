@@ -12,9 +12,6 @@ import { supabase } from '@/lib/supabase-client';
 import { VELS } from '@/lib/constants';
 import { toast } from 'sonner';
 
-const VAULT_CODE = 'velshanmugam@850';
-const MOCK_OTP = '123456';
-
 export default function FounderVaultPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -26,16 +23,29 @@ export default function FounderVaultPage() {
   const [shaking, setShaking] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
 
-  function handleVaultCode(e: React.FormEvent) {
+  // REMOVED: const VAULT_CODE and const MOCK_OTP = '123456' - NOW SECURE SERVER CHECK
+
+  async function handleVaultCode(e: React.FormEvent) {
     e.preventDefault();
-    if (vaultCode.trim() === VAULT_CODE) {
-      setStep(2);
-      toast.success('Vault code accepted');
-    } else {
-      setShaking(true);
-      toast.error('Invalid vault code');
-      setTimeout(() => setShaking(false), 500);
+    setLoading(true);
+    try {
+      const res = await fetch('/api/vault/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: vaultCode.trim() }),
+      });
+      if (res.ok) {
+        setStep(2);
+        toast.success('Vault code accepted');
+      } else {
+        setShaking(true);
+        toast.error('Invalid vault code');
+        setTimeout(() => setShaking(false), 500);
+      }
+    } catch {
+      toast.error('Vault verification failed');
     }
+    setLoading(false);
   }
 
   async function handleEmailPassword(e: React.FormEvent) {
@@ -44,7 +54,7 @@ export default function FounderVaultPage() {
       toast.error('Email and password required');
       return;
     }
-    if (email.trim().toLowerCase() !== VELS.adminEmail) {
+    if (email.trim().toLowerCase() !== VELS.adminEmail.toLowerCase()) {
       setShaking(true);
       toast.error('This vault is not for you');
       setTimeout(() => setShaking(false), 500);
@@ -61,8 +71,18 @@ export default function FounderVaultPage() {
         setLoading(false);
         return;
       }
-      toast.success('Credentials verified — OTP sent');
-      setStep(3);
+      // SEND REAL OTP VIA RESEND
+      const otpRes = await fetch('/api/vault/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      if (otpRes.ok) {
+        toast.success('Credentials verified — Real OTP sent to email');
+        setStep(3);
+      } else {
+        toast.error('Failed to send OTP - check Resend config');
+      }
     } catch {
       toast.error('Authentication failed');
     }
@@ -76,16 +96,22 @@ export default function FounderVaultPage() {
       return;
     }
     setLoading(true);
-
     try {
-      if (otp.trim() === MOCK_OTP) {
+      // VERIFY REAL OTP FROM DB - NO MORE 123456
+      const res = await fetch('/api/vault/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: otp.trim(), vaultCode }),
+      });
+      if (res.ok) {
         sessionStorage.setItem('founderVault', 'true');
         sessionStorage.setItem('vels_admin_auth', 'true');
         toast.success('Vault unlocked — Welcome, Founder');
         router.push('/admin/dashboard');
       } else {
+        const data = await res.json();
         setShaking(true);
-        toast.error('Invalid OTP');
+        toast.error(data.error || 'Invalid OTP');
         setTimeout(() => setShaking(false), 500);
       }
     } catch {
@@ -106,7 +132,6 @@ export default function FounderVaultPage() {
         </div>
 
         <div className={`black-gold-card p-6 md:p-8 space-y-6 ${shaking ? 'animate-shake' : ''}`}>
-          {/* Step indicator */}
           <div className="flex items-center justify-center gap-2">
             {[1, 2, 3].map((s) => (
               <div
@@ -118,7 +143,6 @@ export default function FounderVaultPage() {
             ))}
           </div>
 
-          {/* Step 1: Vault Code */}
           {step === 1 && (
             <form onSubmit={handleVaultCode} className="space-y-4">
               <div className="text-center space-y-2">
@@ -142,13 +166,12 @@ export default function FounderVaultPage() {
                   />
                 </div>
               </div>
-              <Button type="submit" className="w-full gold-gradient text-black font-semibold hover:glow-gold h-12">
-                Unlock <ArrowRight className="h-4 w-4 ml-2" />
+              <Button type="submit" disabled={loading} className="w-full gold-gradient text-black font-semibold hover:glow-gold h-12">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Unlock <ArrowRight className="h-4 w-4 ml-2" /></>}
               </Button>
             </form>
           )}
 
-          {/* Step 2: Email + Password */}
           {step === 2 && (
             <form onSubmit={handleEmailPassword} className="space-y-4">
               <div className="text-center space-y-2">
@@ -160,36 +183,15 @@ export default function FounderVaultPage() {
                 <Label htmlFor="vault-email">Email</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="vault-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="founder@email.com"
-                    required
-                    autoFocus
-                    className="pl-9 bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)]"
-                  />
+                  <Input id="vault-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="founder@email.com" required autoFocus className="pl-9 bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)]" />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="vault-pwd">Password</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="vault-pwd"
-                    type={showPwd ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password"
-                    required
-                    className="pl-9 pr-9 bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPwd(!showPwd)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
+                  <Input id="vault-pwd" type={showPwd ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" required className="pl-9 pr-9 bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)]" />
+                  <button type="button" onClick={() => setShowPwd(!showPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
@@ -200,7 +202,6 @@ export default function FounderVaultPage() {
             </form>
           )}
 
-          {/* Step 3: OTP */}
           {step === 3 && (
             <form onSubmit={handleOtp} className="space-y-4">
               <div className="text-center space-y-2">
@@ -210,18 +211,7 @@ export default function FounderVaultPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="vault-otp">6-Digit OTP</Label>
-                <Input
-                  id="vault-otp"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  placeholder="000000"
-                  required
-                  autoFocus
-                  className="bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)] text-center text-2xl tracking-[0.5em] font-mono"
-                />
+                <Input id="vault-otp" type="text" inputMode="numeric" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} placeholder="000000" required autoFocus className="bg-[hsl(0_0%_8%)] border-[hsl(43_30%_25%)] focus:border-[hsl(43_65%_52%)] text-center text-2xl tracking-[0.5em] font-mono" />
               </div>
               <Button type="submit" disabled={loading} className="w-full gold-gradient text-black font-semibold hover:glow-gold h-12">
                 {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying...</> : <>Enter Vault <ArrowRight className="h-4 w-4 ml-2" /></>}
@@ -230,10 +220,7 @@ export default function FounderVaultPage() {
           )}
 
           {step > 1 && (
-            <button
-              onClick={() => setStep(step - 1)}
-              className="text-xs text-muted-foreground hover:text-[hsl(43_65%_52%)] w-full text-center"
-            >
+            <button onClick={() => setStep(step - 1)} className="text-xs text-muted-foreground hover:text-[hsl(43_65%_52%)] w-full text-center">
               ← Back to Step {step - 1}
             </button>
           )}
